@@ -1,0 +1,81 @@
+---
+# Script to do Health Checks on Cisco Network devices
+
+- name: Health Checks
+  hosts: "all"
+  gather_facts: false
+
+  vars_files: creds.yml
+
+  vars:
+    ansible_connection: network_cli
+    ansible_network_os: ios
+
+  tasks:
+    - name: Gather device facts
+      ios_facts:
+      register: iosFacts
+
+    #- debug:
+        #var: iosFacts
+
+    - debug:
+        msg:
+          - "DEVICE MODEL = {{ iosFacts['ansible_facts']['ansible_net_model'] }}"
+          - "IOS IMAGE = {{ iosFacts['ansible_facts']['ansible_net_image'] }}"
+
+    - name: Check Device Uptime & Clocking
+      ios_command:
+        commands:
+          - show ver | inc uptime|reason
+          - show clock
+      register: uptime
+
+    - debug:
+        var: uptime["stdout_lines"]
+
+    - name: IOS-XE devices & C4500s
+      block:
+        - name: Check environmental conditions
+          ios_command:
+            commands:
+              - show env
+          register: env
+
+        - debug:
+            var: env["stdout_lines"]
+
+      when:
+          - (iosFacts['ansible_facts']['ansible_net_iostype'] == 'IOS-XE') or (iosFacts['ansible_facts']['ansible_net_model'] == 'WS-C4500X-16')
+
+    - name: IOS devices
+      block:
+        - name: Check switches environmental conditions
+          ios_command:
+            commands: show env all
+          register: env
+
+        - debug:
+            var: env["stdout_lines"]
+
+      when:
+        - iosFacts['ansible_facts']['ansible_net_iostype'] == 'IOS'
+        - iosFacts['ansible_facts']['ansible_net_model'] != 'WS-C4500X-16'
+
+    - name: Check Interfaces Status & Descriptions
+      ios_command:
+        commands:
+          - show int desc | exc down
+          - show ip int brief | exc down
+      register: interface
+
+    - debug:
+        var: interface["stdout_lines"]
+
+    - name: Check BGP Routing
+      ios_command:
+        commands: show ip bgp summary
+      register: bgp
+
+    - debug:
+        var: bgp["stdout_lines"]
